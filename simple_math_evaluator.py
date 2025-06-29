@@ -55,9 +55,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Model configuration
 MODEL_CONFIG = {
-    "provider": "groq",
-    "model_id": "qwen/qwen3-32b",
-    "tokenizer_id": "qwen/qwen3-32b",
+    "provider": "openai",
+    "model_id": "gpt-3.5-turbo",
+    "tokenizer_id": "gpt-3.5-turbo",
     "max_context": 128000,
     "max_output": 40960,
 }
@@ -164,6 +164,8 @@ async def process_sample(
             # Extract response content and tokens
             response_content = response.choices[0].message.content
             output_tokens = response.usage.completion_tokens
+            input_tokens = response.usage.prompt_tokens
+            total_tokens = response.usage.total_tokens
 
             # Extract answer
             boxed_answers = extract_boxed(response_content)
@@ -850,4 +852,3 @@ def evaluate_with_tools(
 
 if __name__ == "__main__":
     app()
-
