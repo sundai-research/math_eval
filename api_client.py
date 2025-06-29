@@ -18,11 +18,12 @@ from tenacity import (
 # Model configuration
 MODEL_CONFIG = {
     "provider": "openai",
-    "model_id": "gpt-4o-mini",
-    "tokenizer_id": "gpt2",  # Using gpt2 tokenizer as approximation for OpenAI models
+    "model_id": "Qwen/Qwen3-32B",
+    "tokenizer_id": "Qwen/Qwen3-32B",  # Using gpt2 tokenizer as approximation for OpenAI models
     "max_context": 128000,
     "max_output": 16384,  # gpt-4o supports up to 16K output tokens
     "default_max_tokens": 4096,
+    "base_url": "https://91f6-169-62-23-49.ngrok-free.app/v1",
 }
 
 # Global tokenizer instance for efficiency
@@ -95,4 +96,8 @@ def create_openai_client() -> AsyncOpenAI:
     if not os.environ.get("OPENAI_API_KEY"):
         raise ValueError("OPENAI_API_KEY environment variable not set")
 
-    return AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"), timeout=30.0)
+    return AsyncOpenAI(
+        api_key=os.environ.get("OPENAI_API_KEY"),
+        timeout=30.0,
+        base_url=MODEL_CONFIG["base_url"],
+    )
