@@ -2,6 +2,7 @@
 """
 Simple Math Evaluator - Async evaluation with real-time verification and JSONL logging
 """
+
 import importlib
 from wrapt_timeout_decorator import timeout
 
@@ -237,8 +238,8 @@ async def run_evaluation(
 ):
     """Main evaluation function"""
     # Check API key
-    if not os.environ.get("GROQ_API_KEY"):
-        raise ValueError("GROQ_API_KEY environment variable not set")
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise ValueError("OPENAI_API_KEY environment variable not set")
 
     # Load dataset
     dataset_file = f"data/OlymMATH-{dataset}.jsonl"
@@ -711,8 +712,8 @@ async def run_tool_evaluation(
     )
 
     # Check API key
-    if not os.environ.get("GROQ_API_KEY"):
-        raise ValueError("GROQ_API_KEY environment variable not set")
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise ValueError("OPENAI_API_KEY environment variable not set")
 
     # Load dataset
     dataset_file = f"data/OlymMATH-{dataset}.jsonl"
