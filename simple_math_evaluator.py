@@ -35,7 +35,7 @@ import traceback
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 from math_verification import extract_boxed, format_for_math_verify, string_compare_answers, verify_answer
-from api_client import make_api_call, calculate_max_tokens, create_groq_client, MODEL_CONFIG
+from api_client import make_api_call, calculate_max_tokens, create_openai_client, MODEL_CONFIG
 from tenacity import RetryError
 import re
 import typer
@@ -45,9 +45,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Model configuration
 MODEL_CONFIG = {
-    "provider": "groq",
-    "model_id": "qwen/qwen3-32b",
-    "tokenizer_id": "qwen/qwen3-32b",
+    "provider": "openai",
+    "model_id": "gpt-3.5-turbo",
+    "tokenizer_id": "gpt-3.5-turbo",
     "max_context": 128000,
     "max_output": 40960
 }
@@ -154,6 +154,8 @@ async def process_sample(
             # Extract response content and tokens
             response_content = response.choices[0].message.content
             output_tokens = response.usage.completion_tokens
+            input_tokens = response.usage.prompt_tokens
+            total_tokens = response.usage.total_tokens
             
             # Extract answer
             boxed_answers = extract_boxed(response_content)
@@ -173,9 +175,12 @@ async def process_sample(
                 "raw_response": response.model_dump(),
                 "extracted_answer": extracted,
                 "is_correct": is_correct,
+                "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
                 "response_length": len(response_content),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "model": MODEL_CONFIG["model_id"]
             })
             
             print(f"✓ {problem_data['unique_id']}-{sample_idx}: {'CORRECT' if is_correct else 'INCORRECT'}")
@@ -189,7 +194,8 @@ async def process_sample(
                 "sample_idx": sample_idx,
                 "error": f"RetryError: {str(e)}",
                 "traceback": traceback.format_exc(),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "model": MODEL_CONFIG["model_id"]
             })
             
         except Exception as e:
@@ -201,7 +207,8 @@ async def process_sample(
                 "sample_idx": sample_idx,
                 "error": str(e),
                 "traceback": traceback.format_exc(),
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "model": MODEL_CONFIG["model_id"]
             })
         return response
 
@@ -217,8 +224,8 @@ async def run_evaluation(
 ):
     """Main evaluation function"""
     # Check API key
-    if not os.environ.get("GROQ_API_KEY"):
-        raise ValueError("GROQ_API_KEY environment variable not set")
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise ValueError("OPENAI_API_KEY environment variable not set")
     
     # Load dataset
     dataset_file = f"data/OlymMATH-{dataset}.jsonl"
@@ -243,7 +250,7 @@ async def run_evaluation(
     
     # Initialize
     is_chinese = dataset.startswith("ZH")
-    client = create_groq_client()
+    client = create_openai_client()
     
     # Create writer
     writer = AsyncJSONLWriter(output_file)
@@ -595,8 +602,8 @@ async def run_tool_evaluation(
     from math_agent_runner import solve_math_problem_async, create_math_tool_system_prompt
     
     # Check API key
-    if not os.environ.get("GROQ_API_KEY"):
-        raise ValueError("GROQ_API_KEY environment variable not set")
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise ValueError("OPENAI_API_KEY environment variable not set")
     
     # Load dataset
     dataset_file = f"data/OlymMATH-{dataset}.jsonl"

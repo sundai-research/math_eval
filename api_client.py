@@ -18,7 +18,7 @@ from tenacity import (
 # Model configuration
 MODEL_CONFIG = {
     "provider": "openai",
-    "model_id": "gpt-4o",
+    "model_id": "gpt-4o-mini",
     "tokenizer_id": "gpt2",  # Using gpt2 tokenizer as approximation for OpenAI models
     "max_context": 128000,
     "max_output": 16384,  # gpt-4o supports up to 16K output tokens
