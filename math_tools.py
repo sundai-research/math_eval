@@ -7,6 +7,7 @@ from math_verification import extract_boxed, verify_answer
 
 # from prompts import format_enumerate_small_cases_prompt
 from tool_call_engine import ToolDefinition, ToolManager, ToolSchema
+import traceback
 import json
 
 
@@ -83,52 +84,52 @@ def submit_math_answer(answer: str, ground_truth: str, verbose: bool = True) -> 
         return error_msg
 
 
-async def enumerate_small_cases(
-    problem_statement: str, original_size: str, small_sizes: list, focus_aspect: str
-) -> str:
-    """
-    Make an LLM API call to analyze smaller versions of a combinatorics problem
-    to identify patterns that lead to the solution of the full problem.
+# async def enumerate_small_cases(
+#     problem_statement: str, original_size: str, small_sizes: list, focus_aspect: str
+# ) -> str:
+#     """
+#     Make an LLM API call to analyze smaller versions of a combinatorics problem
+#     to identify patterns that lead to the solution of the full problem.
 
-    Args:
-        problem_statement: The full problem statement
-        original_size: Description of the original problem size (e.g., "25 students", "9 balls")
-        small_sizes: List of smaller sizes to analyze (e.g., [3, 4, 5, 6])
-        focus_aspect: Specific aspect to focus on during enumeration
+#     Args:
+#         problem_statement: The full problem statement
+#         original_size: Description of the original problem size (e.g., "25 students", "9 balls")
+#         small_sizes: List of smaller sizes to analyze (e.g., [3, 4, 5, 6])
+#         focus_aspect: Specific aspect to focus on during enumeration
 
-    Returns:
-        The LLM's analysis of the small cases
-    """
-    import asyncio
-    from api_client import create_openai_client, make_api_call
+#     Returns:
+#         The LLM's analysis of the small cases
+#     """
+#     import asyncio
+#     from api_client import create_openai_client, make_api_call
 
-    # Format the prompt for analysis
-    analysis_prompt = format_enumerate_small_cases_prompt(
-        problem_statement=problem_statement,
-        original_size=original_size,
-        small_sizes=small_sizes,
-        focus_aspect=focus_aspect,
-    )
+#     # Format the prompt for analysis
+#     analysis_prompt = format_enumerate_small_cases_prompt(
+#         problem_statement=problem_statement,
+#         original_size=original_size,
+#         small_sizes=small_sizes,
+#         focus_aspect=focus_aspect,
+#     )
 
-    # Create messages for the API call
-    messages = [{"role": "user", "content": analysis_prompt}]
+#     # Create messages for the API call
+#     messages = [{"role": "user", "content": analysis_prompt}]
 
-    try:
-        # Create client and make API call without tools
-        client = create_openai_client()
-        response = await make_api_call(
-            client,
-            messages,
-            temperature=0.7,
-            tools=None,  # No tools for this analysis call
-        )
+#     try:
+#         # Create client and make API call without tools
+#         client = create_openai_client()
+#         response = await make_api_call(
+#             client,
+#             messages,
+#             temperature=0.7,
+#             tools=None,  # No tools for this analysis call
+#         )
 
-        # Extract and return the analysis
-        analysis = response.choices[0].message.content
-        return f"Small cases analysis:\n\n{analysis}"
+#         # Extract and return the analysis
+#         analysis = response.choices[0].message.content
+#         return f"Small cases analysis:\n\n{analysis}"
 
-    except Exception as e:
-        return f"Error during small cases analysis: {str(e)}"
+#     except Exception as e:
+#         return f"Error during small cases analysis: {str(e)}"
 
 
 # Tool schema for the math answer submission tool
@@ -280,7 +281,13 @@ def execute_math_tool_call(
             print(f"  💥 Tool execution error: {error_msg}")
         return error_msg
 
-    result = tool_manager.execute_tool(tool_name, **arguments)
+    try:
+        result = tool_manager.execute_tool(tool_name, **arguments)
+    except Exception as e:
+        error_msg = f"❌ ERROR: Tool execution failed: {str(e)}\n\n📍 Traceback:\n{traceback.format_exc()}"
+        if verbose:
+            print(f"  💥 Tool execution error: {error_msg}")
+        result = error_msg
 
     if isinstance(result, str):
         return result

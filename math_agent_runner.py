@@ -25,7 +25,6 @@ async def solve_math_problem_async(
     ground_truth: str,
     tool_manager: ToolManager,
     max_iterations: int = 3,
-    max_tool_retries: int = 3,
     verbose: bool = True,
     writer=None,  # AsyncJSONLWriter instance
     temperature: float = 0.6,
@@ -132,26 +131,14 @@ async def solve_math_problem_async(
         )
 
     verbose = True
-    print(f"🚀 DEBUG: Function called for {unique_id}-{sample_idx}")
-    print(f"🔍 DEBUG: Semaphore is: {semaphore}")
-
-    # Handle semaphore properly - create a dummy one if None
-    if semaphore is None:
-        print(
-            f"⚠️  DEBUG: No semaphore provided, creating dummy semaphore for {unique_id}-{sample_idx}"
-        )
-        semaphore = asyncio.Semaphore(1)  # Create a dummy semaphore
 
     # Use semaphore for concurrency control
-    print(f"🔒 DEBUG: About to enter semaphore for {unique_id}-{sample_idx}")
     async with semaphore:
-        print(f"✅ DEBUG: Inside semaphore for {unique_id}-{sample_idx}")
         # Initialize variables
         iteration = 0
         tool_call_count = 0
         last_submitted_answer = ""
         last_extracted_answer = ""
-        print(f"🔢 DEBUG: Variables initialized for {unique_id}-{sample_idx}")
 
         # Check if API key is set
         if not os.environ.get("OPENAI_API_KEY"):
@@ -167,7 +154,7 @@ async def solve_math_problem_async(
             {"type": t["type"], "function": t["function"]}
             for t in tool_manager.read_tools()
         ]
-        # tools += [MATH_SUBMIT_TOOL_SCHEMA]
+        tools += [MATH_SUBMIT_TOOL_SCHEMA]
         # tools += [ENUMERATE_SMALL_CASES_TOOL_SCHEMA]
 
         # Copy messages to avoid modifying the original
@@ -366,6 +353,7 @@ async def solve_math_problem_async(
                         last_submitted_answer = ""
                     else:
                         # Store the submitted answer for tracking
+                        print(f"loaded function arguments {function_args=}")
                         last_submitted_answer = function_args.get("answer", "")
 
                         if verbose:
@@ -374,12 +362,13 @@ async def solve_math_problem_async(
                             )
 
                         # Execute the tool (now async)
-                        tool_result = await execute_math_tool_call(
-                            function_name, function_args, ground_truth, verbose
+                        tool_result = execute_math_tool_call(
+                            function_name,
+                            function_args,
+                            ground_truth,
+                            tool_manager=tool_manager,
+                            verbose=verbose,
                         )
-
-                    # Extract the answer content for tracking using the same logic as math_tools.py
-                    from math_verification import extract_boxed
 
                     boxed_content = extract_boxed(last_submitted_answer)
 

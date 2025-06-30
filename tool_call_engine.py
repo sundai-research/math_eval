@@ -70,6 +70,7 @@ class ToolManager:
         # if the tool exists, load it in and try calling it
         exec(tool["python_implementation"], globals())
         func = globals()[name]
+        print(f"{params=}")
         return func(**params)
 
 
