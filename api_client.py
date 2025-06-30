@@ -18,12 +18,20 @@ from tenacity import (
 # Model configuration
 MODEL_CONFIG = {
     "provider": "openai",
-    "model_id": "Qwen/Qwen3-30B-A3B",
-    "tokenizer_id": "Qwen/Qwen3-30B-A3B",  # Using gpt2 tokenizer as approximation for OpenAI models
-    "max_context": 32768,
-    "max_output": 32000,  # gpt-4o supports up to 16K output tokens
-    "default_max_tokens": 32000,
-    "base_url": "https://90fa-169-62-23-49.ngrok-free.app/v1",
+    # "model_id": "Qwen/Qwen3-30B-A3B",
+    # "tokenizer_id": "Qwen/Qwen3-30B-A3B",  # Using gpt2 tokenizer as approximation for OpenAI models
+    # "max_context": 32768,
+    # "max_output": 32000,  # gpt-4o supports up to 16K output tokens
+    # "default_max_tokens": 32000,
+    # "base_url": "https://90fa-169-62-23-49.ngrok-free.app/v1",
+    # "timeout": 900,
+    "model_id": "Qwen/Qwen3-32B",
+    "tokenizer_id": "Qwen/Qwen3-32B",  # Using gpt2 tokenizer as approximation for OpenAI models
+    "max_context": 128000,
+    "max_output": 16384,  # gpt-4o supports up to 16K output tokens
+    "default_max_tokens": 4096,
+    "base_url": "http://127.0.0.1:8000/v1",
+    "timeout": 900,
 }
 
 # Global tokenizer instance for efficiency
@@ -63,6 +71,8 @@ async def make_api_call(
         "max_tokens": max_tokens,
         "top_p": 0.95,
     }
+
+    params["extra_body"] = {"top_k": 20, "min_p": 0}
 
     # Add tools if provided
     if tools:
@@ -114,6 +124,6 @@ def create_openai_client() -> AsyncOpenAI:
 
     return AsyncOpenAI(
         api_key=os.environ.get("OPENAI_API_KEY"),
-        timeout=900.0,
+        timeout=MODEL_CONFIG["timeout"],
         base_url=MODEL_CONFIG["base_url"],
     )

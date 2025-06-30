@@ -712,12 +712,14 @@ async def run_tool_evaluation(
     dataset: str,
     output: Optional[str],
     max_iterations: int,
+    tools_file: str,
 ):
     """Main tool-based evaluation function"""
     from math_agent_runner import (
         solve_math_problem_async,
         create_math_tool_system_prompt,
     )
+    from tool_call_engine import ToolManager
 
     # Check API key
     if not os.environ.get("OPENAI_API_KEY"):
@@ -747,9 +749,13 @@ async def run_tool_evaluation(
     # Initialize
     is_chinese = dataset.startswith("ZH")
 
+    # Create tool manager (empty for now)
+    tool_manager = ToolManager(tools_file=tools_file)
+
     # Create writer
     writer = AsyncJSONLWriter(output_file)
     await writer.start()
+    print("🔧 DEBUG: Writer started!", flush=True)
 
     # Create semaphore
     semaphore = asyncio.Semaphore(concurrency)
@@ -789,6 +795,7 @@ Problem: """
                 sample_idx=sample_idx,
                 messages=messages,
                 ground_truth=problem["answer"],
+                tool_manager=tool_manager,  # This was missing!
                 max_iterations=max_iterations,
                 verbose=True,
                 writer=writer,
@@ -803,13 +810,13 @@ Problem: """
 
     results = []
     if tasks:
-        print(f"🏃 Running {len(tasks)} tool-based evaluations...")
+        print(f"🏃 Running {len(tasks)} tool-based evaluations...", flush=True)
 
         # Run all tasks
         results = await asyncio.gather(*tasks)
-        print(f"🏃 Completed {len(results)} evaluations")
+        print(f"🏃 Completed {len(results)} evaluations", flush=True)
     else:
-        print("⚠️  No new tasks to run (all already completed)")
+        print("⚠️  No new tasks to run (all already completed)", flush=True)
 
     # Stop writer
     await writer.stop()
@@ -825,6 +832,11 @@ def evaluate_with_tools(
     ),
     max_idx: int = typer.Option(
         ..., "--max", help="End index for problems (exclusive)"
+    ),
+    tools_file: str = typer.Option(
+        ...,
+        "--tools-file",
+        help="File that contains tools (JSONl)",
     ),
     samples: int = typer.Option(10, "--samples", help="Number of samples per question"),
     temperature: float = typer.Option(
@@ -856,6 +868,7 @@ def evaluate_with_tools(
             dataset,
             output,
             max_iterations,
+            tools_file=tools_file,
         )
     )
 
