@@ -53,9 +53,7 @@ async def make_api_call(
     max_tokens: int = None,
     tools: Optional[List[Dict]] = None,
 ):
-    """Unified API call function with optional tool support and retry logic"""
-    if max_tokens is None:
-        max_tokens = calculate_max_tokens(messages)
+    max_tokens = calculate_max_tokens(messages, tools)
 
     # Create request parameters
     params = {
@@ -71,20 +69,38 @@ async def make_api_call(
         params["tools"] = tools
         params["tool_choice"] = "auto"
 
-    response = await client.chat.completions.create(**params)
+    max_retries = 10
+    retries = 0
+
+    while True:
+        try:
+            response = await client.chat.completions.create(**params)
+            break
+        except Exception as e:
+            if "400" in str(e) and max_tokens > 1000:
+                # Reduce max_tokens by 1000 and retry
+                max_tokens = max_tokens - 1000
+                params["max_tokens"] = max_tokens
+                print(f"Reducing max_tokens to {max_tokens} and retrying...")
+                retries += 1
+                if retries >= max_retries:
+                    raise e
+            else:
+                raise e
+
 
     # Always return the full response object
     return response
 
 
-def calculate_max_tokens(messages: List[Dict], max_output: int = None) -> int:
+def calculate_max_tokens(messages: List[Dict], tools: Optional[List[Dict]] = [],max_output: int = None) -> int:
     """Calculate maximum tokens available for generation"""
     if max_output is None:
         max_output = MODEL_CONFIG["max_output"]
 
     try:
         tokenizer_instance = get_tokenizer()
-        prompt = tokenizer_instance.apply_chat_template(messages, tokenize=False)
+        prompt = tokenizer_instance.apply_chat_template(messages, tools=tools, add_generation_prompt=True, tokenize=False)
         num_prompt_tokens = len(tokenizer_instance.encode(prompt))
         return min(max_output, MODEL_CONFIG["max_context"] - num_prompt_tokens)
     except Exception:

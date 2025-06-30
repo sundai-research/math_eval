@@ -341,8 +341,8 @@ async def solve_math_problem_async(
                                 f"Problem {unique_id}-{sample_idx}: 🔧 Calling tool '{function_name}'"
                             )
 
-                        # Execute the tool
-                        tool_result = execute_math_tool_call(
+                        # Execute the tool (now async)
+                        tool_result = await execute_math_tool_call(
                             function_name, function_args, ground_truth, verbose
                         )
 

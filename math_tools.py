@@ -72,9 +72,9 @@ def submit_math_answer(answer: str, ground_truth: str, verbose: bool = True) -> 
         return error_msg
 
 
-def enumerate_small_cases(problem_statement: str, original_size: str, small_sizes: list, focus_aspect: str) -> str:
+async def enumerate_small_cases(problem_statement: str, original_size: str, small_sizes: list, focus_aspect: str) -> str:
     """
-    Generate a prompt for exhaustively analyzing smaller versions of a combinatorics problem
+    Make an LLM API call to analyze smaller versions of a combinatorics problem
     to identify patterns that lead to the solution of the full problem.
     
     Args:
@@ -84,14 +84,38 @@ def enumerate_small_cases(problem_statement: str, original_size: str, small_size
         focus_aspect: Specific aspect to focus on during enumeration
         
     Returns:
-        A formatted prompt that guides systematic enumeration and pattern analysis
+        The LLM's analysis of the small cases
     """
-    return format_enumerate_small_cases_prompt(
+    import asyncio
+    from api_client import create_openai_client, make_api_call
+    
+    # Format the prompt for analysis
+    analysis_prompt = format_enumerate_small_cases_prompt(
         problem_statement=problem_statement,
         original_size=original_size,
         small_sizes=small_sizes,
         focus_aspect=focus_aspect
     )
+    
+    # Create messages for the API call
+    messages = [{"role": "user", "content": analysis_prompt}]
+    
+    try:
+        # Create client and make API call without tools
+        client = create_openai_client()
+        response = await make_api_call(
+            client, 
+            messages, 
+            temperature=0.7,
+            tools=None  # No tools for this analysis call
+        )
+        
+        # Extract and return the analysis
+        analysis = response.choices[0].message.content
+        return f"Small cases analysis:\n\n{analysis}"
+        
+    except Exception as e:
+        return f"Error during small cases analysis: {str(e)}"
 
 
 # Tool schema for the math answer submission tool
@@ -147,7 +171,7 @@ ENUMERATE_SMALL_CASES_TOOL_SCHEMA = {
 }
 
 
-def execute_math_tool_call(tool_name: str, arguments: dict, ground_truth: str, verbose: bool = True) -> str:
+async def execute_math_tool_call(tool_name: str, arguments: dict, ground_truth: str, verbose: bool = True) -> str:
     """
     Execute a math tool call and return the result.
     
@@ -184,7 +208,8 @@ def execute_math_tool_call(tool_name: str, arguments: dict, ground_truth: str, v
             if not all(isinstance(x, int) for x in arguments["small_sizes"]):
                 raise TypeError("All elements in 'small_sizes' must be integers")
             
-            return enumerate_small_cases(
+            # Call the async function directly since we're in async context
+            return await enumerate_small_cases(
                 arguments["problem_statement"],
                 arguments["original_size"],
                 arguments["small_sizes"],
