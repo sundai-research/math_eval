@@ -168,12 +168,18 @@ async def process_sample(
             input_tokens = response.usage.prompt_tokens
             total_tokens = response.usage.total_tokens
 
+            assert response.choices[0].finish_reason in ["stop", "length"]
+
             # Extract answer
             boxed_answers = extract_boxed(response_content)
             extracted = boxed_answers[0] if boxed_answers else ""
 
             # Verify answer
-            is_correct = verify_answer(extracted, problem_data["answer"])
+            is_correct = (
+                False
+                if response.choices[0].finish_reason != "stop"
+                else verify_answer(extracted, problem_data["answer"])
+            )
 
             # Write result immediately
             await writer.write(
@@ -196,6 +202,7 @@ async def process_sample(
             print(
                 f"✓ {problem_data['unique_id']}-{sample_idx}: {'CORRECT' if is_correct else 'INCORRECT'}"
             )
+            return response
 
         except RetryError as e:
             print(f"✗ {problem_data['unique_id']}-{sample_idx}: RETRY ERROR - {str(e)}")
@@ -210,6 +217,7 @@ async def process_sample(
                     "timestamp": datetime.now().isoformat(),
                 }
             )
+            return None
 
         except Exception as e:
             print(f"✗ {problem_data['unique_id']}-{sample_idx}: ERROR - {str(e)}")
@@ -224,7 +232,7 @@ async def process_sample(
                     "timestamp": datetime.now().isoformat(),
                 }
             )
-        return response
+            return None
 
 
 async def run_evaluation(

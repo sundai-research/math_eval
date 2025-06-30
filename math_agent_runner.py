@@ -8,12 +8,14 @@ import json
 import asyncio
 import time
 import re
-from math_tools import MATH_SUBMIT_TOOL_SCHEMA, ENUMERATE_SMALL_CASES_TOOL_SCHEMA, execute_math_tool_call
+from math_tools import MATH_SUBMIT_TOOL_SCHEMA, execute_math_tool_call
 from api_client import make_api_call, create_openai_client
 from typing import List, Dict, Union, Optional
 from tenacity import RetryError
 from datetime import datetime
 from math_verification import extract_boxed, verify_answer
+
+from tool_call_engine import ToolDefinition, ToolSchema, ToolManager
 
 
 async def solve_math_problem_async(
@@ -21,7 +23,9 @@ async def solve_math_problem_async(
     sample_idx: int,
     messages: List[Dict[str, str]],
     ground_truth: str,
+    tool_manager: ToolManager,
     max_iterations: int = 3,
+    max_tool_retries: int = 3,
     verbose: bool = True,
     writer=None,  # AsyncJSONLWriter instance
     temperature: float = 0.6,
@@ -37,6 +41,7 @@ async def solve_math_problem_async(
         messages: List of message dictionaries in OpenAI format
         ground_truth: The correct answer content (without \\boxed{})
         max_iterations: Maximum number of attempts allowed (default: 3)
+        max_tool_retries: Maximum number of tool call retry attempts (default: 3)
         verbose: Whether to print detailed output (default: True)
         writer: Optional AsyncJSONLWriter to write results as they complete
         temperature: Sampling temperature for the model
@@ -81,9 +86,11 @@ async def solve_math_problem_async(
         if writer:
             # Calculate total tokens from conversation (approximate)
             total_content_length = sum(
-                len(msg.get("content", "")) for msg in conversation if msg.get("content")
+                len(msg.get("content", ""))
+                for msg in conversation
+                if msg.get("content")
             )
-            
+
             jsonl_result = {
                 "unique_id": unique_id,
                 "sample_idx": sample_idx,
@@ -103,7 +110,7 @@ async def solve_math_problem_async(
                 "response_length": total_content_length,  # Approximate
                 "output_tokens": total_content_length // 4,  # Rough estimate
             }
-            
+
             # Add problem data if provided
             if problem_data:
                 jsonl_result["problem"] = problem_data.get("problem", "")
@@ -124,13 +131,27 @@ async def solve_math_problem_async(
             extracted_answer=last_extracted_answer,
         )
 
+    verbose = True
+    print(f"🚀 DEBUG: Function called for {unique_id}-{sample_idx}")
+    print(f"🔍 DEBUG: Semaphore is: {semaphore}")
+
+    # Handle semaphore properly - create a dummy one if None
+    if semaphore is None:
+        print(
+            f"⚠️  DEBUG: No semaphore provided, creating dummy semaphore for {unique_id}-{sample_idx}"
+        )
+        semaphore = asyncio.Semaphore(1)  # Create a dummy semaphore
+
     # Use semaphore for concurrency control
+    print(f"🔒 DEBUG: About to enter semaphore for {unique_id}-{sample_idx}")
     async with semaphore:
+        print(f"✅ DEBUG: Inside semaphore for {unique_id}-{sample_idx}")
         # Initialize variables
         iteration = 0
         tool_call_count = 0
         last_submitted_answer = ""
         last_extracted_answer = ""
+        print(f"🔢 DEBUG: Variables initialized for {unique_id}-{sample_idx}")
 
         # Check if API key is set
         if not os.environ.get("OPENAI_API_KEY"):
@@ -138,11 +159,16 @@ async def solve_math_problem_async(
                 print(f"Problem {unique_id}-{sample_idx}: OPENAI_API_KEY not set")
             return await return_result(False, "OPENAI_API_KEY not set")
 
-        # Initialize OpenAI client
+        # openai client
         client = create_openai_client()
 
         # Define the tools available to the model
-        tools = [ENUMERATE_SMALL_CASES_TOOL_SCHEMA]
+        tools = [
+            {"type": t["type"], "function": t["function"]}
+            for t in tool_manager.read_tools()
+        ]
+        # tools += [MATH_SUBMIT_TOOL_SCHEMA]
+        # tools += [ENUMERATE_SMALL_CASES_TOOL_SCHEMA]
 
         # Copy messages to avoid modifying the original
         conversation_messages = messages.copy()
@@ -191,32 +217,38 @@ async def solve_math_problem_async(
 
             # Get the response
             assistant_message = response.choices[0].message
-            
+
             # Parse answer from response content (similar to process_sample)
             if assistant_message.content:
                 # Extract answer from content
                 boxed_answers = extract_boxed(assistant_message.content)
                 extracted = boxed_answers[0] if boxed_answers else ""
-                
+
                 # Verify answer directly if found
                 if extracted:
                     is_correct = verify_answer(extracted, ground_truth)
-                    
+
                     if is_correct:
                         # Update tracking variables
                         last_submitted_answer = assistant_message.content
                         last_extracted_answer = extracted
-                        
+
                         if verbose:
-                            print(f"Problem {unique_id}-{sample_idx}: ✅ Found correct answer in response text: {extracted}")
-                            print(f"Problem {unique_id}-{sample_idx}: Solved in {iteration} iterations (via text parsing)")
-                        
+                            print(
+                                f"Problem {unique_id}-{sample_idx}: ✅ Found correct answer in response text: {extracted}"
+                            )
+                            print(
+                                f"Problem {unique_id}-{sample_idx}: Solved in {iteration} iterations (via text parsing)"
+                            )
+
                         # Add the response to conversation
                         conversation_messages.append(
                             {"role": "assistant", "content": assistant_message.content}
                         )
-                        
-                        return await return_result(True, "Problem solved successfully via text parsing")
+
+                        return await return_result(
+                            True, "Problem solved successfully via text parsing"
+                        )
 
             if verbose:
                 # Enhanced logging for better pattern detection
