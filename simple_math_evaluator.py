@@ -65,9 +65,7 @@ MODEL_CONFIG = {
 
 # Prompts
 PROMPT_CN = "请逐步推理，并在 \\boxed{} 内给出您的最终答案。\n\n"
-PROMPT_EN = (
-    "Put your final answer within \\boxed{}.\n\n"
-)
+PROMPT_EN = "Put your final answer within \\boxed{}.\n\n"
 
 app = typer.Typer()
 
@@ -755,7 +753,6 @@ async def run_tool_evaluation(
     # Create writer
     writer = AsyncJSONLWriter(output_file)
     await writer.start()
-    print("🔧 DEBUG: Writer started!", flush=True)
 
     # Create semaphore
     semaphore = asyncio.Semaphore(concurrency)
