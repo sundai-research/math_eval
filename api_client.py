@@ -5,7 +5,7 @@ Includes retry logic and response handling.
 
 import os
 from typing import Dict, List, Optional
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, APIError, APITimeoutError, RateLimitError
 from transformers import AutoTokenizer
 from tenacity import (
     retry,
@@ -18,12 +18,12 @@ from tenacity import (
 # Model configuration
 MODEL_CONFIG = {
     "provider": "openai",
-    "model_id": "Qwen/Qwen3-32B",
-    "tokenizer_id": "Qwen/Qwen3-32B",  # Using gpt2 tokenizer as approximation for OpenAI models
-    "max_context": 128000,
-    "max_output": 16384,  # gpt-4o supports up to 16K output tokens
+    "model_id": "Qwen/Qwen3-30B-A3B",
+    "tokenizer_id": "Qwen/Qwen3-30B-A3B",  # Using gpt2 tokenizer as approximation for OpenAI models
+    "max_context": 32000,
+    "max_output": 32000,  # gpt-4o supports up to 16K output tokens
     "default_max_tokens": 4096,
-    "base_url": "https://91f6-169-62-23-49.ngrok-free.app/v1",
+    "base_url": "https://90fa-169-62-23-49.ngrok-free.app/v1",
 }
 
 # Global tokenizer instance for efficiency
@@ -39,11 +39,11 @@ def get_tokenizer():
 
 
 @retry(
-    stop=stop_after_delay(120),  # Shorter timeout
+    stop=stop_after_delay(1000),  # Shorter timeout
     wait=wait_random(min=2, max=10),  # Shorter wait times
     retry=retry_if_exception_type(
-        (ConnectionError, TimeoutError)
-    ),  # Don't retry auth errors
+        (ConnectionError, TimeoutError, APITimeoutError, RateLimitError, APIError)
+    ),
     reraise=True,
 )
 async def make_api_call(
@@ -57,6 +57,7 @@ async def make_api_call(
     if max_tokens is None:
         max_tokens = calculate_max_tokens(messages)
 
+    # messages[-1]['content'] += " /no_think"
     # Create request parameters
     params = {
         "model": MODEL_CONFIG["model_id"],
@@ -96,9 +97,8 @@ def create_openai_client() -> AsyncOpenAI:
     if not os.environ.get("OPENAI_API_KEY"):
         raise ValueError("OPENAI_API_KEY environment variable not set")
 
-
     return AsyncOpenAI(
         api_key=os.environ.get("OPENAI_API_KEY"),
-        timeout=30.0,
+        timeout=180.0,  # 3 minutes client timeout
         base_url=MODEL_CONFIG["base_url"],
     )

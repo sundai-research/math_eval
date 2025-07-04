@@ -8,6 +8,8 @@ import asyncio
 """
 
 
+# - add a tool to check if the answer is correct
+# - add a tool to check if the answer is correct
 class ToolSchema(TypedDict):
     name: str
 

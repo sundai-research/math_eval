@@ -772,7 +772,7 @@ CRITICAL: Text answers in your response are ignored. You MUST use the submit_mat
 
 Problem: """
 
-            full_content = tool_instructions + problem_text + " /think"
+            full_content = tool_instructions + problem_text + " /no_think"
 
             messages = [{"role": "user", "content": full_content}]
 

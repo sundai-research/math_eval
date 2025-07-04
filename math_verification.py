@@ -137,3 +137,13 @@ def verify_answer(extracted: str, gold: str) -> bool:
         except Exception:
             # If even string comparison fails, return False
             return False
+        
+def verify_answer_with_math_verify(generated: str, gold: str) -> bool:
+    """
+    Verify if extracted answer matches gold answer.
+    First tries math_verify, then falls back to string comparison.
+    """
+    extracted = extract_boxed(generated)[0]
+    print(f"extracted: {extracted}")
+    print(f"gold: {gold}")
+    return verify_answer(extracted, gold)
