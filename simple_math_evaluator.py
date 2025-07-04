@@ -65,9 +65,7 @@ MODEL_CONFIG = {
 
 # Prompts
 PROMPT_CN = "请逐步推理，并在 \\boxed{} 内给出您的最终答案。\n\n"
-PROMPT_EN = (
-    "Please reason step by step, and put your final answer within \\boxed{}.\n\n"
-)
+PROMPT_EN = "Put your final answer within \\boxed{}.\n\n"
 
 app = typer.Typer()
 
@@ -168,12 +166,18 @@ async def process_sample(
             input_tokens = response.usage.prompt_tokens
             total_tokens = response.usage.total_tokens
 
+            assert response.choices[0].finish_reason in ["stop", "length"]
+
             # Extract answer
             boxed_answers = extract_boxed(response_content)
             extracted = boxed_answers[0] if boxed_answers else ""
 
             # Verify answer
-            is_correct = verify_answer(extracted, problem_data["answer"])
+            is_correct = (
+                False
+                if response.choices[0].finish_reason != "stop"
+                else verify_answer(extracted, problem_data["answer"])
+            )
 
             # Write result immediately
             await writer.write(
@@ -196,6 +200,7 @@ async def process_sample(
             print(
                 f"✓ {problem_data['unique_id']}-{sample_idx}: {'CORRECT' if is_correct else 'INCORRECT'}"
             )
+            return response
 
         except RetryError as e:
             print(f"✗ {problem_data['unique_id']}-{sample_idx}: RETRY ERROR - {str(e)}")
@@ -210,6 +215,7 @@ async def process_sample(
                     "timestamp": datetime.now().isoformat(),
                 }
             )
+            return None
 
         except Exception as e:
             print(f"✗ {problem_data['unique_id']}-{sample_idx}: ERROR - {str(e)}")
@@ -224,7 +230,7 @@ async def process_sample(
                     "timestamp": datetime.now().isoformat(),
                 }
             )
-        return response
+            return None
 
 
 async def run_evaluation(
@@ -704,12 +710,14 @@ async def run_tool_evaluation(
     dataset: str,
     output: Optional[str],
     max_iterations: int,
+    tools_file: str,
 ):
     """Main tool-based evaluation function"""
     from math_agent_runner import (
         solve_math_problem_async,
         create_math_tool_system_prompt,
     )
+    from tool_call_engine import ToolManager
 
     # Check API key
     if not os.environ.get("OPENAI_API_KEY"):
@@ -738,6 +746,9 @@ async def run_tool_evaluation(
 
     # Initialize
     is_chinese = dataset.startswith("ZH")
+
+    # Create tool manager (empty for now)
+    tool_manager = ToolManager(tools_file=tools_file)
 
     # Create writer
     writer = AsyncJSONLWriter(output_file)
@@ -781,11 +792,13 @@ Problem: """
                 sample_idx=sample_idx,
                 messages=messages,
                 ground_truth=problem["answer"],
+                tool_manager=tool_manager,  # This was missing!
                 max_iterations=max_iterations,
                 verbose=True,
                 writer=writer,
                 temperature=temperature,
                 semaphore=semaphore,
+                problem_data=problem,  # Pass full problem data
             )
             tasks.append(task)
 
@@ -794,13 +807,13 @@ Problem: """
 
     results = []
     if tasks:
-        print(f"🏃 Running {len(tasks)} tool-based evaluations...")
+        print(f"🏃 Running {len(tasks)} tool-based evaluations...", flush=True)
 
         # Run all tasks
         results = await asyncio.gather(*tasks)
-        print(f"🏃 Completed {len(results)} evaluations")
+        print(f"🏃 Completed {len(results)} evaluations", flush=True)
     else:
-        print("⚠️  No new tasks to run (all already completed)")
+        print("⚠️  No new tasks to run (all already completed)", flush=True)
 
     # Stop writer
     await writer.stop()
@@ -816,6 +829,11 @@ def evaluate_with_tools(
     ),
     max_idx: int = typer.Option(
         ..., "--max", help="End index for problems (exclusive)"
+    ),
+    tools_file: str = typer.Option(
+        ...,
+        "--tools-file",
+        help="File that contains tools (JSONl)",
     ),
     samples: int = typer.Option(10, "--samples", help="Number of samples per question"),
     temperature: float = typer.Option(
@@ -847,6 +865,7 @@ def evaluate_with_tools(
             dataset,
             output,
             max_iterations,
+            tools_file=tools_file,
         )
     )
 

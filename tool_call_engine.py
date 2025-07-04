@@ -72,7 +72,8 @@ class ToolManager:
         # if the tool exists, load it in and try calling it
         exec(tool["python_implementation"], globals())
         func = globals()[name]
-        return asyncio.run(func(**params))
+        print(f"{params=}")
+        return func(**params)
 
 
 if __name__ == "__main__":

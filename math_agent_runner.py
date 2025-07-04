@@ -9,10 +9,13 @@ import asyncio
 import time
 import re
 from math_tools import MATH_SUBMIT_TOOL_SCHEMA, execute_math_tool_call
-from api_client import make_api_call, create_groq_client
+from api_client import make_api_call, create_openai_client
 from typing import List, Dict, Union, Optional
 from tenacity import RetryError
 from datetime import datetime
+from math_verification import extract_boxed, verify_answer
+
+from tool_call_engine import ToolDefinition, ToolSchema, ToolManager
 
 
 async def solve_math_problem_async(
@@ -20,11 +23,13 @@ async def solve_math_problem_async(
     sample_idx: int,
     messages: List[Dict[str, str]],
     ground_truth: str,
+    tool_manager: ToolManager,
     max_iterations: int = 3,
     verbose: bool = True,
     writer=None,  # AsyncJSONLWriter instance
     temperature: float = 0.6,
     semaphore: Optional[asyncio.Semaphore] = None,
+    problem_data: Optional[Dict] = None,  # Full problem data for JSONL output
 ) -> Dict[str, Union[bool, int, List[Dict], str]]:
     """
     Asynchronously solve a math problem with tool-based answer submission.
@@ -35,6 +40,7 @@ async def solve_math_problem_async(
         messages: List of message dictionaries in OpenAI format
         ground_truth: The correct answer content (without \\boxed{})
         max_iterations: Maximum number of attempts allowed (default: 3)
+        max_tool_retries: Maximum number of tool call retry attempts (default: 3)
         verbose: Whether to print detailed output (default: True)
         writer: Optional AsyncJSONLWriter to write results as they complete
         temperature: Sampling temperature for the model
@@ -77,6 +83,13 @@ async def solve_math_problem_async(
 
         # Write to JSONL if writer is provided
         if writer:
+            # Calculate total tokens from conversation (approximate)
+            total_content_length = sum(
+                len(msg.get("content", ""))
+                for msg in conversation
+                if msg.get("content")
+            )
+
             jsonl_result = {
                 "unique_id": unique_id,
                 "sample_idx": sample_idx,
@@ -88,10 +101,19 @@ async def solve_math_problem_async(
                 "timestamp": datetime.now().isoformat(),
                 "final_submitted_answer": final_answer,
                 "extracted_final_answer": extracted_answer,
+                "extracted_answer": extracted_answer,  # For compatibility with analyze command
                 "is_correct": success,  # For compatibility with analysis
+                "gold_answer": ground_truth,  # For compatibility with analyze command
                 "ground_truth": ground_truth,
                 "full_conversation": conversation,
+                "response_length": total_content_length,  # Approximate
+                "output_tokens": total_content_length // 4,  # Rough estimate
             }
+
+            # Add problem data if provided
+            if problem_data:
+                jsonl_result["problem"] = problem_data.get("problem", "")
+                jsonl_result["subject"] = problem_data.get("subject", "unknown")
             await writer.write(jsonl_result)
 
         return result
@@ -108,6 +130,8 @@ async def solve_math_problem_async(
             extracted_answer=last_extracted_answer,
         )
 
+    verbose = True
+
     # Use semaphore for concurrency control
     async with semaphore:
         # Initialize variables
@@ -122,11 +146,16 @@ async def solve_math_problem_async(
                 print(f"Problem {unique_id}-{sample_idx}: OPENAI_API_KEY not set")
             return await return_result(False, "OPENAI_API_KEY not set")
 
-        # Initialize Groq client
-        client = create_groq_client()
+        # openai client
+        client = create_openai_client()
 
         # Define the tools available to the model
-        tools = [MATH_SUBMIT_TOOL_SCHEMA]
+        tools = [
+            {"type": t["type"], "function": t["function"]}
+            for t in tool_manager.read_tools()
+        ]
+        tools += [MATH_SUBMIT_TOOL_SCHEMA]
+        # tools += [ENUMERATE_SMALL_CASES_TOOL_SCHEMA]
 
         # Copy messages to avoid modifying the original
         conversation_messages = messages.copy()
@@ -175,6 +204,38 @@ async def solve_math_problem_async(
 
             # Get the response
             assistant_message = response.choices[0].message
+
+            # Parse answer from response content (similar to process_sample)
+            if assistant_message.content:
+                # Extract answer from content
+                boxed_answers = extract_boxed(assistant_message.content)
+                extracted = boxed_answers[0] if boxed_answers else ""
+
+                # Verify answer directly if found
+                if extracted:
+                    is_correct = verify_answer(extracted, ground_truth)
+
+                    if is_correct:
+                        # Update tracking variables
+                        last_submitted_answer = assistant_message.content
+                        last_extracted_answer = extracted
+
+                        if verbose:
+                            print(
+                                f"Problem {unique_id}-{sample_idx}: ✅ Found correct answer in response text: {extracted}"
+                            )
+                            print(
+                                f"Problem {unique_id}-{sample_idx}: Solved in {iteration} iterations (via text parsing)"
+                            )
+
+                        # Add the response to conversation
+                        conversation_messages.append(
+                            {"role": "assistant", "content": assistant_message.content}
+                        )
+
+                        return await return_result(
+                            True, "Problem solved successfully via text parsing"
+                        )
 
             if verbose:
                 # Enhanced logging for better pattern detection
@@ -292,6 +353,7 @@ async def solve_math_problem_async(
                         last_submitted_answer = ""
                     else:
                         # Store the submitted answer for tracking
+                        print(f"loaded function arguments {function_args=}")
                         last_submitted_answer = function_args.get("answer", "")
 
                         if verbose:
@@ -299,13 +361,14 @@ async def solve_math_problem_async(
                                 f"Problem {unique_id}-{sample_idx}: 🔧 Calling tool '{function_name}'"
                             )
 
-                        # Execute the tool
+                        # Execute the tool (now async)
                         tool_result = execute_math_tool_call(
-                            function_name, function_args, ground_truth, verbose
+                            function_name,
+                            function_args,
+                            ground_truth,
+                            tool_manager=tool_manager,
+                            verbose=verbose,
                         )
-
-                    # Extract the answer content for tracking using the same logic as math_tools.py
-                    from math_verification import extract_boxed
 
                     boxed_content = extract_boxed(last_submitted_answer)
 
